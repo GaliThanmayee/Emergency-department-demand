@@ -1,0 +1,270 @@
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+from pathlib import Path
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.decomposition import PCA
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 4 - BOTTLENECK CLUSTERING (PATIENT ARCHETYPES)
+# ==========================================================
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+INPUT_FILE = BASE / "triage_features.csv"
+OUTPUT_FILE = BASE / "triage_clustered.csv"
+print("\nLoading dataset from Phase 3...")
+df = pd.read_csv(INPUT_FILE, low_memory=False)
+print(f"✅ Loaded: {df.shape[0]:,} rows x {df.shape[1]:,} columns")
+
+# ----------------------------------------------------------
+# Select clustering features
+# ----------------------------------------------------------
+cluster_cols = ['age', 'esi', 'n_edvisits', 'n_admissions',
+                 'complexity_score', 'pressure_index']
+cluster_cols = [c for c in cluster_cols if c in df.columns]
+print(f"\nClustering on: {cluster_cols}")
+
+X = df[cluster_cols].copy()
+
+# ----------------------------------------------------------
+# Scale features
+# ----------------------------------------------------------
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# ----------------------------------------------------------
+# Sample for silhouette computation (avoids O(n^2) slowdown)
+# ----------------------------------------------------------
+sample_size = min(10000, len(X_scaled))
+np.random.seed(42)
+sample_idx = np.random.choice(len(X_scaled), sample_size, replace=False)
+X_sample = X_scaled[sample_idx]
+
+# ----------------------------------------------------------
+# Find optimal k: elbow (inertia) + silhouette, in ONE loop
+# ----------------------------------------------------------
+print("\nFinding optimal number of clusters...")
+print("(Silhouette computed on a 10,000-row sample for speed)\n")
+
+inertias = []
+sil_scores = []
+k_range = range(2, 8)
+
+for k in k_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels_full = km.fit_predict(X_scaled)
+
+    inertia = km.inertia_
+    inertias.append(inertia)
+
+    labels_sample = labels_full[sample_idx]
+    sil = silhouette_score(X_sample, labels_sample)
+    sil_scores.append(sil)
+
+    print(f"   k={k}: inertia={inertia:,.0f}  |  silhouette={sil:.4f}")
+
+# ----------------------------------------------------------
+# Elbow plot
+# ----------------------------------------------------------
+plt.figure(figsize=(7, 5))
+plt.plot(list(k_range), inertias, marker='o')
+plt.title('Elbow Method for Optimal k')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia')
+plt.tight_layout()
+plt.savefig(BASE / "plot9_elbow_method.png", dpi=150)
+plt.close()
+print("\n   Saved: plot9_elbow_method.png")
+
+# ----------------------------------------------------------
+# Silhouette score plot
+# ----------------------------------------------------------
+plt.figure(figsize=(7, 5))
+plt.plot(list(k_range), sil_scores, marker='o', color='tomato')
+plt.title('Silhouette Scores by K')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Silhouette Score')
+plt.tight_layout()
+plt.savefig(BASE / "plot9b_silhouette_scores.png", dpi=150)
+plt.close()
+print("   Saved: plot9b_silhouette_scores.png")
+
+# ----------------------------------------------------------
+# Identify statistically best k (for reporting), but use k=2
+# as primary AND k=4 as secondary — see decision rationale below
+# ----------------------------------------------------------
+best_k = list(k_range)[int(np.argmax(sil_scores))]
+print(f"\nBest K by silhouette score: {best_k} (silhouette={max(sil_scores):.4f})")
+
+# ==========================================================
+# PRIMARY MODEL: K = best_k (statistically optimal, k=2)
+# ==========================================================
+K = best_k
+print(f"\nRunning PRIMARY KMeans with k={K} (statistically optimal)...")
+kmeans = KMeans(n_clusters=K, random_state=42, n_init=10)
+df['cluster'] = kmeans.fit_predict(X_scaled)
+print("✅ Primary clustering complete")
+
+# ----------------------------------------------------------
+# Cluster quality metrics (on sample, for primary k)
+# ----------------------------------------------------------
+sample_cluster_labels = df.iloc[sample_idx]['cluster'].values
+cluster_silhouette = silhouette_score(X_sample, sample_cluster_labels)
+db_score = davies_bouldin_score(X_sample, sample_cluster_labels)
+
+print("\nCluster Quality Metrics (Primary k)")
+print(f"Silhouette Score : {cluster_silhouette:.4f}")
+print(f"Davies-Bouldin   : {db_score:.4f}  (lower is better)")
+
+# ----------------------------------------------------------
+# Profile each cluster (primary k)
+# ----------------------------------------------------------
+profile_cols = cluster_cols + ['admitted']
+profile = df.groupby('cluster')[profile_cols].mean().round(2)
+profile['count'] = df['cluster'].value_counts().sort_index()
+profile['pct_of_total'] = (profile['count'] / len(df) * 100).round(1)
+
+print("\n" + "=" * 60)
+print(f"PATIENT ARCHETYPE PROFILES (k={K}, PRIMARY)")
+print("=" * 60)
+print(profile)
+
+profile.to_csv(BASE / "cluster_profiles.csv")
+
+# ----------------------------------------------------------
+# Heatmap visualization (primary k)
+# ----------------------------------------------------------
+plt.figure(figsize=(9, 5))
+heatmap_data = df.groupby('cluster')[profile_cols].mean()
+sns.heatmap(heatmap_data, annot=True, fmt='.2f', cmap='YlOrRd')
+plt.title(f'ED Patient Archetype Profiles (k={K})', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig(BASE / "plot10_cluster_heatmap.png", dpi=150)
+plt.close()
+print("\nSaved: plot10_cluster_heatmap.png")
+
+# ----------------------------------------------------------
+# Cluster size bar chart (primary k)
+# ----------------------------------------------------------
+plt.figure(figsize=(7, 5))
+df['cluster'].value_counts().sort_index().plot(kind='bar', color='steelblue')
+plt.title(f'Patient Count by Archetype Cluster (k={K})', fontsize=14, fontweight='bold')
+plt.xlabel('Cluster')
+plt.ylabel('Number of Patients')
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.savefig(BASE / "plot11_cluster_sizes.png", dpi=150)
+plt.close()
+print("Saved: plot11_cluster_sizes.png")
+
+# ----------------------------------------------------------
+# PCA visualization of clusters (primary k)
+# ----------------------------------------------------------
+print("\nGenerating PCA cluster visualization...")
+plot_size = min(10000, len(X_scaled))
+np.random.seed(42)
+plot_idx = np.random.choice(len(X_scaled), plot_size, replace=False)
+
+X_plot = X_scaled[plot_idx]
+cluster_plot = df.iloc[plot_idx]['cluster']
+
+pca = PCA(n_components=2, random_state=42)
+components = pca.fit_transform(X_plot)
+
+plt.figure(figsize=(8, 6))
+plt.scatter(components[:, 0], components[:, 1], c=cluster_plot, s=5, alpha=0.5, cmap='viridis')
+plt.title(f"Patient Archetypes (PCA Projection, k={K})")
+plt.xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)")
+plt.ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.1f}% variance)")
+plt.colorbar(label='Cluster')
+plt.tight_layout()
+plt.savefig(BASE / "plot12_cluster_pca.png", dpi=150)
+plt.close()
+print("Saved: plot12_cluster_pca.png")
+
+# ----------------------------------------------------------
+# Archetype interpretation (primary k)
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print(f"ARCHETYPE INTERPRETATION (k={K}, PRIMARY)")
+print("=" * 60)
+sorted_clusters = profile.sort_values('admitted', ascending=False)
+for cluster_id, row in sorted_clusters.iterrows():
+    print(f"\nCluster {int(cluster_id)} ({row['count']:.0f} patients, "
+          f"{row['pct_of_total']:.1f}% of total)")
+    print(f"   Admission rate : {row['admitted']*100:.1f}%")
+    print(f"   Avg age        : {row['age']:.1f}")
+    print(f"   Avg ESI        : {row['esi']:.2f}")
+    print(f"   Avg pressure   : {row['pressure_index']:.2f}")
+
+# ==========================================================
+# SECONDARY MODEL: K = 4 (operational archetype detail)
+# ==========================================================
+print("\n" + "=" * 60)
+print("SECONDARY ANALYSIS: k=4 PARTITION")
+print("=" * 60)
+print("(Run in addition to the statistically optimal k, ")
+print(" to surface operationally actionable subgroups)")
+
+K4 = 4
+kmeans_k4 = KMeans(n_clusters=K4, random_state=42, n_init=10)
+df['cluster_k4'] = kmeans_k4.fit_predict(X_scaled)
+
+profile_k4 = df.groupby('cluster_k4')[profile_cols].mean().round(2)
+profile_k4['count'] = df['cluster_k4'].value_counts().sort_index()
+profile_k4['pct_of_total'] = (profile_k4['count'] / len(df) * 100).round(1)
+
+print(f"\nPATIENT ARCHETYPE PROFILES (k={K4}, SECONDARY)")
+print(profile_k4)
+
+profile_k4.to_csv(BASE / "cluster_profiles_k4.csv")
+
+# Heatmap for k=4
+plt.figure(figsize=(9, 5))
+heatmap_data_k4 = df.groupby('cluster_k4')[profile_cols].mean()
+sns.heatmap(heatmap_data_k4, annot=True, fmt='.2f', cmap='YlOrRd')
+plt.title('ED Patient Archetype Profiles (k=4, Secondary)', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig(BASE / "plot10b_cluster_heatmap_k4.png", dpi=150)
+plt.close()
+print("\nSaved: plot10b_cluster_heatmap_k4.png")
+
+print("\nARCHETYPE INTERPRETATION (k=4, SECONDARY)")
+sorted_clusters_k4 = profile_k4.sort_values('admitted', ascending=False)
+for cluster_id, row in sorted_clusters_k4.iterrows():
+    print(f"\nCluster {int(cluster_id)} ({row['count']:.0f} patients, "
+          f"{row['pct_of_total']:.1f}% of total)")
+    print(f"   Admission rate : {row['admitted']*100:.1f}%")
+    print(f"   Avg age        : {row['age']:.1f}")
+    print(f"   Avg ESI        : {row['esi']:.2f}")
+    print(f"   Avg pressure   : {row['pressure_index']:.2f}")
+
+# ----------------------------------------------------------
+# Save dataset with BOTH cluster assignments
+# ----------------------------------------------------------
+df.to_csv(OUTPUT_FILE, index=False)
+
+print(f"Primary clustering   : k={K} (statistically optimal)  -> column 'cluster'")
+print(f"Secondary clustering : k={K4} (operational detail)     -> column 'cluster_k4'")
+print(f"Silhouette (primary) : {cluster_silhouette:.4f}")
+print(f"Davies-Bouldin       : {db_score:.4f}")
+print(f"Rows    : {df.shape[0]:,}")
+print(f"Columns : {df.shape[1]:,}")
+print(f"Saved   : {OUTPUT_FILE}")
+print("\nFiles Generated:")
+print("- plot9_elbow_method.png")
+print("- plot9b_silhouette_scores.png")
+print("- plot10_cluster_heatmap.png")
+print("- plot10b_cluster_heatmap_k4.png")
+print("- plot11_cluster_sizes.png")
+print("- plot12_cluster_pca.png")
+print("- cluster_profiles.csv")
+print("- cluster_profiles_k4.csv")

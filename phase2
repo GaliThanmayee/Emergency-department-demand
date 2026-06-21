@@ -1,0 +1,450 @@
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 2 - EXPLORATORY DATA ANALYSIS
+# Emergency Department Thesis
+# ==========================================================
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+CLEAN_FILE = BASE / "triage_cleaned.csv"
+
+# ==========================================================
+# Load Data
+# ==========================================================
+
+print("\nLoading cleaned dataset...")
+
+df = pd.read_csv(CLEAN_FILE, low_memory=False)
+
+print(f"Loaded: {df.shape[0]:,} rows")
+print(f"Columns: {df.shape[1]:,}")
+
+# ==========================================================
+# Plot 1: Admission Distribution
+# ==========================================================
+
+print("\nPlot 1: Admission Distribution")
+
+plt.figure(figsize=(7,5))
+
+counts = df['admitted'].value_counts().sort_index()
+
+plt.bar(
+    ['Discharged', 'Admitted'],
+    counts.values
+)
+
+plt.title("Admission vs Discharge")
+plt.ylabel("Patients")
+
+for i, v in enumerate(counts.values):
+    plt.text(i, v + 3000, f"{v:,}", ha='center')
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot1_admission_distribution.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 2: ESI Distribution
+# ==========================================================
+
+print("Plot 2: ESI Distribution")
+
+plt.figure(figsize=(7,5))
+
+df['esi'].value_counts().sort_index().plot(
+    kind='bar'
+)
+
+plt.title("ESI Distribution")
+plt.xlabel("ESI Level")
+plt.ylabel("Patients")
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot2_esi_distribution.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 3: Admission Rate by ESI
+# ==========================================================
+
+print("Plot 3: Admission Rate by ESI")
+
+plt.figure(figsize=(7,5))
+
+esi_admit = (
+    df.groupby('esi')['admitted']
+      .mean() * 100
+)
+
+esi_admit.plot(kind='bar')
+
+plt.title("Admission Rate by ESI")
+plt.ylabel("Admission Rate (%)")
+
+for i, v in enumerate(esi_admit.values):
+    plt.text(i, v + 0.5, f"{v:.1f}%")
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot3_admission_by_esi.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 4: Age Distribution
+# ==========================================================
+
+print("Plot 4: Age Distribution")
+
+plt.figure(figsize=(8,5))
+
+df[df['admitted']==0]['age'].hist(
+    bins=30,
+    alpha=0.6,
+    label='Discharged'
+)
+
+df[df['admitted']==1]['age'].hist(
+    bins=30,
+    alpha=0.6,
+    label='Admitted'
+)
+
+plt.legend()
+
+plt.title("Age Distribution by Outcome")
+plt.xlabel("Age")
+plt.ylabel("Count")
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot4_age_distribution.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 5: Admission by Gender
+# ==========================================================
+if 'gender' in df.columns:
+
+    print("Plot 5: Admission by Gender")
+
+    plt.figure(figsize=(7,5))
+
+    gender_admit = (
+        df.groupby('gender')['admitted']
+          .mean() * 100
+    )
+
+    gender_admit.plot(kind='bar')
+
+    plt.title("Admission Rate by Gender")
+    plt.ylabel("Admission Rate (%)")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        BASE / "plot5_gender_admission.png",
+        dpi=150
+    )
+
+    plt.close()
+
+else:
+
+    print("gender column not found")
+
+# ==========================================================
+# Plot 6: Visit Volume by Hour
+# ==========================================================
+
+print("Plot 6: Visit Volume by Hour")
+
+hour_volume = (
+    df.groupby('arrivalhour_bin')
+      .size()
+)
+
+plt.figure(figsize=(12,5))
+
+hour_volume.plot(kind='bar')
+
+plt.title("Visit Volume by Arrival Hour")
+plt.xlabel("Arrival Hour")
+plt.ylabel("Number of Visits")
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot6_visit_volume_by_hour.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 7: Admission Rate by Hour
+# ==========================================================
+
+print("Plot 7: Admission Rate by Hour")
+
+hour_admit = (
+    df.groupby('arrivalhour_bin')['admitted']
+      .mean() * 100
+)
+
+plt.figure(figsize=(12,5))
+
+hour_admit.plot(kind='bar')
+
+plt.title("Admission Rate by Arrival Hour")
+plt.xlabel("Arrival Hour")
+plt.ylabel("Admission Rate (%)")
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot7_admission_by_hour.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Plot 8: Prior ED Visits
+# ==========================================================
+
+print("Plot 8: Prior ED Visits")
+
+df['visit_group'] = pd.cut(
+    df['n_edvisits'],
+    bins=[-1,0,1,2,5,1000],
+    labels=['0','1','2','3-5','6+']
+)
+
+visit_admit = (
+    df.groupby('visit_group')['admitted']
+      .mean() * 100
+)
+
+plt.figure(figsize=(7,5))
+
+visit_admit.plot(kind='bar')
+
+plt.title("Admission Rate by Prior ED Visits")
+plt.ylabel("Admission Rate (%)")
+
+plt.tight_layout()
+
+plt.savefig(
+    BASE / "plot8_prior_visits.png",
+    dpi=150
+)
+
+plt.close()
+
+# ==========================================================
+# Top Chief Complaints
+# ==========================================================
+
+print("\nTop Chief Complaints")
+
+cc_cols = [
+    c for c in df.columns
+    if c.startswith('cc_')
+]
+
+if len(cc_cols) > 0:
+
+    cc_counts = (
+        df[cc_cols]
+        .sum()
+        .sort_values(ascending=False)
+        .head(20)
+    )
+
+    print(cc_counts)
+
+    cc_counts.to_csv(
+        BASE / "top20_chief_complaints.csv"
+    )
+
+else:
+
+    print(
+        "No chief complaint columns found."
+    )
+
+print(cc_counts)
+
+cc_counts.to_csv(
+    BASE / "top20_chief_complaints.csv"
+)
+
+# ==========================================================
+# Complexity Score
+# ==========================================================
+
+print("\nComplexity Score")
+
+disease_cols = [
+    'htn',
+    'copd',
+    'chrkidneydisease',
+    'diabmelnoc',
+    'chfnonhp'
+]
+
+available = [
+    c for c in disease_cols
+    if c in df.columns
+]
+
+df['complexity_score'] = (
+    df[available]
+    .sum(axis=1)
+)
+
+print(
+    df['complexity_score']
+    .describe()
+)
+
+complexity_admit = (
+    df.groupby('complexity_score')
+      ['admitted']
+      .mean() * 100
+)
+
+print("\nAdmission Rate by Complexity")
+
+print(complexity_admit)
+
+complexity_admit.to_csv(
+    BASE / "complexity_admission_rates.csv"
+)
+
+# ==========================================================
+# Correlation Analysis
+# ==========================================================
+
+print("\nCorrelation with Admission")
+
+important = [
+    'admitted',
+    'age',
+    'esi',
+    'n_edvisits',
+    'n_admissions',
+    'triage_vital_hr',
+    'triage_vital_sbp',
+    'triage_vital_temp'
+]
+
+existing = [
+    c for c in important
+    if c in df.columns
+]
+
+corr = (
+    df[existing]
+    .corr()['admitted']
+    .sort_values(ascending=False)
+)
+
+print(corr)
+
+corr.to_csv(
+    BASE / "admission_correlations.csv"
+)
+
+from scipy.stats import chi2_contingency
+
+print("\nChi-Square Test")
+
+if 'esi' in df.columns:
+
+    contingency_table = pd.crosstab(
+        df['esi'],
+        df['admitted']
+    )
+
+    chi2, p, dof, expected = chi2_contingency(
+        contingency_table
+    )
+
+    print(f"Chi-square statistic : {chi2:.3f}")
+    print(f"P-value              : {p:.8f}")
+
+    if p < 0.05:
+        print(
+            "Result: Significant association between ESI and admission."
+        )
+    else:
+        print(
+            "Result: No significant association."
+        )
+# ==========================================================
+# Save Enhanced Dataset
+# ==========================================================
+
+df.to_csv(
+    BASE / "triage_phase2.csv",
+    index=False
+)
+
+# ==========================================================
+# Final Summary
+# ==========================================================
+
+print(f"Rows               : {df.shape[0]:,}")
+print(f"Columns            : {df.shape[1]:,}")
+print(f"Admission Rate     : {df['admitted'].mean():.2%}")
+print(f"Mean Age           : {df['age'].mean():.1f}")
+print(f"Median ESI         : {df['esi'].median():.0f}")
+print(f"Mean ED Visits     : {df['n_edvisits'].mean():.2f}")
+print(f"Mean Admissions    : {df['n_admissions'].mean():.2f}")
+
+print("\nFiles Generated:")
+print("- plot1_admission_distribution.png")
+print("- plot2_esi_distribution.png")
+print("- plot3_admission_by_esi.png")
+print("- plot4_age_distribution.png")
+print("- plot5_gender_admission.png")
+print("- plot6_visit_volume_by_hour.png")
+print("- plot7_admission_by_hour.png")
+print("- plot8_prior_visits.png")
+print("- top20_chief_complaints.csv")
+print("- complexity_admission_rates.csv")
+print("- admission_correlations.csv")
+print("- triage_phase2.csv")

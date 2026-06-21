@@ -1,0 +1,136 @@
+import json
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 6 - INSIGHT SYNTHESIS & RECOMMENDATIONS
+# ==========================================================
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+CLUSTERED_FILE = BASE / "triage_clustered.csv"
+FEAT_IMP_FILE = BASE / "feature_importance.csv"
+CLUSTER_PROFILE_FILE = BASE / "cluster_profiles.csv"
+print("\nLoading data...")
+df = pd.read_csv(CLUSTERED_FILE, low_memory=False)
+feat_imp = pd.read_csv(FEAT_IMP_FILE, index_col=0)
+cluster_profile = pd.read_csv(CLUSTER_PROFILE_FILE, index_col=0)
+
+print(f"Loaded clustered data: {df.shape[0]:,} rows")
+
+with open(
+    BASE / "model_metrics.json"
+) as f:
+
+    metrics = json.load(f)
+
+auc = metrics["auc"]
+
+# ----------------------------------------------------------
+# Archetype naming
+# ----------------------------------------------------------
+archetype_names = {}
+for cluster_id, row in cluster_profile.iterrows():
+    if row['age'] > 65 and row['admitted'] > 0.5:
+        name = "High-Acuity Elderly (Bed-Blocker Risk)"
+    elif row['n_edvisits'] > 10:
+        name = "Frequent Flyers (Super-Utilizers)"
+    elif row['admitted'] < 0.15:
+        name = "Low-Acuity Fast-Throughput"
+    else:
+        name = "Moderate-Pressure Middle Group"
+    archetype_names[cluster_id] = name
+
+print("\n" + "=" * 60)
+print("PATIENT ARCHETYPE SUMMARY")
+print("=" * 60)
+for cluster_id, name in archetype_names.items():
+    row = cluster_profile.loc[cluster_id]
+    print(f"\nCluster {int(cluster_id)}: {name}")
+    print(f"   Size           : {row['count']:,.0f} ({row['pct_of_total']:.1f}%)")
+    print(f"   Admission rate : {row['admitted']*100:.1f}%")
+    print(f"   Avg age        : {row['age']:.1f}")
+    print(f"   Avg ESI        : {row['esi']:.2f}")
+
+# ----------------------------------------------------------
+# Operational pressure summary
+# ----------------------------------------------------------
+total_patients = len(df)
+total_admitted = df['admitted'].sum()
+
+for cluster_id, row in cluster_profile.iterrows():
+    cluster_size = row['count']
+    cluster_admits = cluster_size * row['admitted']
+    pct_of_admits = (cluster_admits / total_admitted) * 100
+    print(f"\n{archetype_names[cluster_id]}:")
+    print(f"   Contributes {pct_of_admits:.1f}% of all hospital admissions")
+    print(f"   from only {row['pct_of_total']:.1f}% of ED visits")
+
+# ----------------------------------------------------------
+# Top drivers chart
+# ----------------------------------------------------------
+print("\nGenerating final summary chart...")
+top10 = feat_imp.head(10)
+top10.columns = ['importance']
+
+plt.figure(figsize=(9, 6))
+top10['importance'].sort_values().plot(kind='barh', color='tomato')
+plt.title('Top 10 Drivers of ED Admission Pressure', fontsize=14, fontweight='bold')
+plt.xlabel('Feature Importance')
+plt.tight_layout()
+plt.savefig(BASE / "plot15_final_top_drivers.png", dpi=150)
+plt.close()
+print("Saved: plot15_final_top_drivers.png")
+
+# ----------------------------------------------------------
+# Final written summary
+# ----------------------------------------------------------
+summary_lines = []
+summary_lines.append("ED TRIAGE ANALYTICS - FINAL INSIGHTS SUMMARY")
+summary_lines.append("=" * 60)
+summary_lines.append(f"\nDataset: {total_patients:,} ED visits")
+summary_lines.append(f"Overall admission rate: {df['admitted'].mean():.1%}")
+summary_lines.append(
+    f"\nModel AUC: {auc:.3f} (Random Forest)"
+)
+summary_lines.append(f"\nTop 5 Predictive Drivers:")
+for i, (feat, val) in enumerate(feat_imp.head(5).iloc[:, 0].items(), 1):
+    summary_lines.append(f"   {i}. {feat} (importance: {val:.3f})")
+
+summary_lines.append(f"\nPatient Archetypes:")
+for cluster_id, name in archetype_names.items():
+    row = cluster_profile.loc[cluster_id]
+    summary_lines.append(f"   - {name}: {row['pct_of_total']:.1f}% of visits, "
+                          f"{row['admitted']*100:.1f}% admission rate")
+
+summary_lines.append(f"\nOperational Recommendations:")
+summary_lines.append("   1. Prioritize early identification of high-acuity elderly")
+summary_lines.append("      patients (Cluster with >60% admission rate) for fast-track")
+summary_lines.append("      bed allocation to reduce ED boarding times.")
+summary_lines.append("   2. Implement care coordination programs for frequent-flyer")
+summary_lines.append("      patients (>10 prior ED visits) - small population but")
+summary_lines.append("      disproportionate resource consumption.")
+summary_lines.append("   3. Use pressure_index (combining ESI, acuity, prior visits/")
+summary_lines.append("      admissions) as an early-warning score at triage.")
+summary_lines.append("   4. Cardiovascular medication history is the strongest single")
+summary_lines.append("      predictor - consider flagging these patients for closer")
+summary_lines.append("      monitoring at triage.")
+
+summary_text = "\n".join(summary_lines)
+print("\n" + summary_text)
+
+with open(BASE / "final_summary.txt", "w") as f:
+    f.write(summary_text)
+
+print("\n" + "=" * 60)
+print("PHASE 6 COMPLETE - ALL 6 PHASES DONE!")
+print("=" * 60)
+print(f"\nFinal summary saved: {BASE / 'final_summary.txt'}")
+print("\nAll output files are in:")
+print(f"{BASE}")

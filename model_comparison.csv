@@ -1,0 +1,5 @@
+Model,AUC
+Gradient Boosting (HistGB),0.9197163084008102
+Logistic Regression,0.9162966503743418
+Decision Tree,0.8932466305655128
+Random Forest,0.8920266913769693

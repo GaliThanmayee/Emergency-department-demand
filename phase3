@@ -1,0 +1,130 @@
+import pandas as pd
+import numpy as np
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 3 - FEATURE ENGINEERING
+# Emergency Department Thesis
+# ==========================================================
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+INPUT_FILE = BASE / "triage_phase2.csv"
+FEATURES_FILE = BASE / "triage_features.csv"
+
+
+# ----------------------------------------------------------
+# Load Data
+# ----------------------------------------------------------
+
+print("\nLoading dataset from Phase 2...")
+
+df = pd.read_csv(INPUT_FILE, low_memory=False)
+
+print(f" Loaded: {df.shape[0]:,} rows")
+print(f" Columns: {df.shape[1]:,}")
+
+# ----------------------------------------------------------
+# Feature 1: High Acuity Flag (ESI 1 or 2)
+# ----------------------------------------------------------
+
+df['high_acuity'] = df['esi'].isin([1, 2]).astype(int)
+
+print("\n high_acuity created")
+print(f"   High acuity patients: {df['high_acuity'].sum():,} "
+      f"({df['high_acuity'].mean():.1%})")
+
+# ----------------------------------------------------------
+# Feature 2: Frequent Visitor Flag (3+ prior ED visits)
+# ----------------------------------------------------------
+
+df['frequent_visitor'] = (df['n_edvisits'] >= 3).astype(int)
+
+print("\n frequent_visitor created")
+print(f"   Frequent visitors: {df['frequent_visitor'].sum():,} "
+      f"({df['frequent_visitor'].mean():.1%})")
+
+# ----------------------------------------------------------
+# Feature 3: Prior Admission Flag
+# ----------------------------------------------------------
+
+df['prior_admission'] = (df['n_admissions'] >= 1).astype(int)
+
+print("\n prior_admission created")
+print(f"   Patients with prior admissions: {df['prior_admission'].sum():,} "
+      f"({df['prior_admission'].mean():.1%})")
+
+# ----------------------------------------------------------
+# Feature 4: Age Group
+# ----------------------------------------------------------
+
+df['age_group'] = pd.cut(
+    df['age'],
+    bins=[0, 18, 35, 50, 65, 80, 150],
+    labels=['<18', '18-34', '35-49', '50-64', '65-79', '80+']
+)
+
+print("\n age_group created")
+print(df['age_group'].value_counts().sort_index())
+
+# ----------------------------------------------------------
+# Feature 5: Pressure Index
+# Combines acuity, frequent visits, prior admissions,
+# and the complexity_score already built in Phase 2
+# ----------------------------------------------------------
+
+df['pressure_index'] = (
+    df['high_acuity'] * 2 +
+    df['frequent_visitor'] +
+    df['prior_admission'] +
+    df['complexity_score']
+)
+
+print("\n pressure_index created")
+print(f"   Average pressure index: {df['pressure_index'].mean():.2f}")
+print(f"   Max pressure index    : {df['pressure_index'].max():.0f}")
+
+# ----------------------------------------------------------
+# Feature Validation - Admission Rate by New Feature
+# ----------------------------------------------------------
+
+print("\n" + "=" * 60)
+print("FEATURE VALIDATION (Admission Rate by Feature)")
+print("=" * 60)
+
+for feat in ['high_acuity', 'frequent_visitor', 'prior_admission']:
+    print(f"\n{feat}:")
+    print((df.groupby(feat)['admitted'].mean() * 100).round(1))
+
+print("\nage_group:")
+print((df.groupby('age_group')['admitted'].mean() * 100).round(1))
+
+print("\npressure_index (binned):")
+df['pressure_bin'] = pd.cut(df['pressure_index'], bins=5)
+print((df.groupby('pressure_bin')['admitted'].mean() * 100).round(1))
+
+# ----------------------------------------------------------
+# Save Feature-Engineered Dataset
+# ----------------------------------------------------------
+
+df.to_csv(FEATURES_FILE, index=False)
+
+# ----------------------------------------------------------
+# Final Summary
+# ----------------------------------------------------------
+
+print(f"Rows    : {df.shape[0]:,}")
+print(f"Columns : {df.shape[1]:,}")
+print(f"Saved   : {FEATURES_FILE}")
+
+new_feature_names = [
+    'high_acuity',
+    'frequent_visitor',
+    'prior_admission',
+    'age_group',
+    'pressure_index'
+]
+
+print(f"\nNew features added: {new_feature_names}")

@@ -1,0 +1,220 @@
+
+import pandas as pd
+import numpy as np
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 1 - DATA PREPARATION
+# Emergency Department Triage Analytics Thesis
+# ==========================================================
+
+# ----------------------------------------------------------
+# Project Paths
+# ----------------------------------------------------------
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+
+RAW_FILE = BASE / "triage_data.csv"
+CLEAN_FILE = BASE / "triage_cleaned.csv"
+REMOVED_FILE = BASE / "removed_columns.csv"
+
+# ----------------------------------------------------------
+# Load Dataset
+# ----------------------------------------------------------
+
+
+print("\nLoading dataset...")
+
+df = pd.read_csv(RAW_FILE, low_memory=False)
+
+print("\n Dataset loaded successfully")
+print(f"Rows    : {df.shape[0]:,}")
+print(f"Columns : {df.shape[1]:,}")
+
+# ----------------------------------------------------------
+# Required Columns Check
+# ----------------------------------------------------------
+
+required_cols = [
+    "disposition",
+    "age",
+    "esi",
+    "n_edvisits",
+    "n_admissions"
+]
+
+missing_required = [
+    col for col in required_cols
+    if col not in df.columns
+]
+
+if missing_required:
+    raise ValueError(
+        f"Missing required columns: {missing_required}"
+    )
+
+# ----------------------------------------------------------
+# Preview
+# ----------------------------------------------------------
+
+print("\nFirst 5 rows")
+
+preview_cols = [
+    "dep_name",
+    "esi",
+    "age",
+    "gender",
+    "disposition"
+]
+
+existing_preview = [
+    col for col in preview_cols
+    if col in df.columns
+]
+
+print(df[existing_preview].head())
+
+# ----------------------------------------------------------
+# Create Target Variable
+# ----------------------------------------------------------
+
+print("\nDisposition Distribution")
+
+print(df["disposition"].value_counts())
+
+df["admitted"] = (
+    df["disposition"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+    .eq("admit")
+    .astype(int)
+)
+
+admitted = df["admitted"].sum()
+discharged = len(df) - admitted
+admission_rate = df["admitted"].mean()
+
+print(f"\nAdmitted   : {admitted:,}")
+print(f"Discharged : {discharged:,}")
+print(f"Admission Rate : {admission_rate:.2%}")
+
+# ----------------------------------------------------------
+# Remove Duplicate Rows
+# ----------------------------------------------------------
+
+duplicates = df.duplicated().sum()
+
+print(f"\nDuplicate Rows : {duplicates:,}")
+
+if duplicates > 0:
+    df = df.drop_duplicates().reset_index(drop=True)
+    print(f" Removed {duplicates:,} duplicate rows")
+
+# ----------------------------------------------------------
+# Missing Value Analysis
+# ----------------------------------------------------------
+
+missing_pct = df.isnull().mean()
+
+removed_cols = missing_pct[
+    missing_pct > 0.50
+].index.tolist()
+
+print(f"\nColumns with >50% missing: {len(removed_cols)}")
+
+pd.DataFrame({
+    "removed_columns": removed_cols
+}).to_csv(
+    REMOVED_FILE,
+    index=False
+)
+
+df = df.drop(columns=removed_cols)
+
+print(f"Remaining Columns : {df.shape[1]:,}")
+
+# ----------------------------------------------------------
+# Fill Missing Values
+# ----------------------------------------------------------
+
+numeric_cols = df.select_dtypes(
+    include=np.number
+).columns
+
+for col in numeric_cols:
+
+    if df[col].isnull().sum() > 0:
+
+        median_value = df[col].median()
+
+        df[col] = df[col].fillna(
+            median_value
+        )
+
+categorical_cols = df.select_dtypes(
+    include="object"
+).columns
+
+for col in categorical_cols:
+
+    if df[col].isnull().sum() > 0:
+
+        mode_value = df[col].mode()[0]
+
+        df[col] = df[col].fillna(
+            mode_value
+        )
+
+remaining_missing = df.isnull().sum().sum()
+
+print(f"\nRemaining Missing Values : {remaining_missing:,}")
+
+# ----------------------------------------------------------
+# Key Statistics
+# ----------------------------------------------------------
+
+stats_cols = [
+    col
+    for col in [
+        "age",
+        "esi",
+        "n_edvisits",
+        "n_admissions"
+    ]
+    if col in df.columns
+]
+
+print("\nKey Statistics")
+
+print(
+    df[stats_cols]
+    .describe()
+    .round(2)
+)
+
+# ----------------------------------------------------------
+# Save Clean Dataset
+# ----------------------------------------------------------
+
+df.to_csv(
+    CLEAN_FILE,
+    index=False
+)
+
+# ----------------------------------------------------------
+# Final Report
+# ----------------------------------------------------------
+
+print(f"Rows               : {df.shape[0]:,}")
+print(f"Columns            : {df.shape[1]:,}")
+print(f"Admission Rate     : {df['admitted'].mean():.2%}")
+print(f"Clean File         : {CLEAN_FILE}")
+print(f"Removed Columns    : {REMOVED_FILE}")
+
+print("\nTop 20 Columns")
+
+print(df.columns[:20].tolist())

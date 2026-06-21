@@ -1,0 +1,108 @@
+import pandas as pd
+import numpy as np
+import warnings
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import StandardScaler
+import pickle
+import json
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# PHASE 5b - MODEL COMPARISON TABLE
+# ==========================================================
+
+BASE = Path("/Users/thanmayeegali/ED_Thesis.ipynb/.vscode/Emergency_Department")
+INPUT_FILE = BASE / "triage_clustered.csv"
+print("\nLoading data...")
+df = pd.read_csv(INPUT_FILE, low_memory=False)
+
+with open(BASE / "feature_cols.json") as f:
+    feature_cols = json.load(f)
+
+X = df[feature_cols].fillna(0)
+y = df['admitted']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+print(f"Train: {X_train.shape[0]:,} | Test: {X_test.shape[0]:,}")
+
+results = {}
+
+print("\nTraining Logistic Regression...")
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+lr = LogisticRegression(max_iter=1000, random_state=42)
+lr.fit(X_train_scaled, y_train)
+lr_auc = roc_auc_score(y_test, lr.predict_proba(X_test_scaled)[:, 1])
+results['Logistic Regression'] = lr_auc
+print(f"   AUC: {lr_auc:.4f}")
+
+print("\nTraining Decision Tree...")
+dt = DecisionTreeClassifier(max_depth=8, random_state=42)
+dt.fit(X_train, y_train)
+dt_auc = roc_auc_score(y_test, dt.predict_proba(X_test)[:, 1])
+results['Decision Tree'] = dt_auc
+print(f"   AUC: {dt_auc:.4f}")
+
+print("\nLoading existing Random Forest...")
+with open(BASE / "rf_model.pkl", "rb") as f:
+    rf = pickle.load(f)
+rf_auc = roc_auc_score(y_test, rf.predict_proba(X_test)[:, 1])
+results['Random Forest'] = rf_auc
+print(f"   AUC: {rf_auc:.4f}")
+
+print("\nTraining HistGradientBoosting (XGBoost alternative)...")
+gb = HistGradientBoostingClassifier(max_iter=150, max_depth=6, random_state=42)
+gb.fit(X_train, y_train)
+gb_auc = roc_auc_score(y_test, gb.predict_proba(X_test)[:, 1])
+results['Gradient Boosting (HistGB)'] = gb_auc
+print(f"   AUC: {gb_auc:.4f}")
+
+try:
+    import xgboost as xgb
+    print("\nTraining XGBoost...")
+    xgb_model = xgb.XGBClassifier(n_estimators=150, max_depth=6, learning_rate=0.1,
+                                    random_state=42, eval_metric='logloss', verbosity=0)
+    xgb_model.fit(X_train, y_train)
+    xgb_auc = roc_auc_score(y_test, xgb_model.predict_proba(X_test)[:, 1])
+    results['XGBoost'] = xgb_auc
+    print(f"   AUC: {xgb_auc:.4f}")
+except Exception as e:
+    print(f"\nXGBoost unavailable ({type(e).__name__}) - using HistGB as XGBoost substitute")
+
+comparison = pd.DataFrame(
+    list(results.items()), columns=['Model', 'AUC']
+).sort_values('AUC', ascending=False).reset_index(drop=True)
+
+print("\n" + "=" * 60)
+print("MODEL COMPARISON TABLE")
+print("=" * 60)
+print(comparison.to_string(index=False))
+
+comparison.to_csv(BASE / "model_comparison.csv", index=False)
+print(f"Saved: model_comparison.csv")
+comparison = pd.DataFrame({
+    "Model": list(results.keys()),
+    "AUC": list(results.values())
+})
+
+comparison = comparison.sort_values(
+    "AUC",
+    ascending=False
+)
+
+print(comparison)
+
+comparison.to_csv(
+    BASE / "model_comparison.csv",
+    index=False
+)

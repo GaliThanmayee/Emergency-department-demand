@@ -1,0 +1,33 @@
+ED TRIAGE ANALYTICS - FINAL INSIGHTS SUMMARY
+============================================================
+
+Dataset: 560,484 ED visits
+Overall admission rate: 29.7%
+
+Model AUC: 0.892 (RandomForest)
+
+Top 5 Predictive Drivers:
+   1. meds_cardiovascular (importance: 0.117)
+   2. esi (importance: 0.090)
+   3. meds_gastrointestinal (importance: 0.077)
+   4. meds_analgesics (importance: 0.050)
+   5. pressure_index (importance: 0.049)
+
+Patient Archetypes:
+   - High-Acuity Elderly (Bed-Blocker Risk): 18.6% of visits, 61.0% admission rate
+   - Low-Acuity Fast-Throughput: 43.3% of visits, 8.0% admission rate
+   - Moderate-Pressure Middle Group: 35.4% of visits, 40.0% admission rate
+   - Frequent Flyers (Super-Utilizers): 2.6% of visits, 36.0% admission rate
+
+Operational Recommendations:
+   1. Prioritize early identification of high-acuity elderly
+      patients (Cluster with >60% admission rate) for fast-track
+      bed allocation to reduce ED boarding times.
+   2. Implement care coordination programs for frequent-flyer
+      patients (>10 prior ED visits) - small population but
+      disproportionate resource consumption.
+   3. Use pressure_index (combining ESI, acuity, prior visits/
+      admissions) as an early-warning score at triage.
+   4. Cardiovascular medication history is the strongest single
+      predictor - consider flagging these patients for closer
+      monitoring at triage.
